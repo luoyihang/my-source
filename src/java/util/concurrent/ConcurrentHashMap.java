@@ -594,7 +594,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     static final int MOVED     = -1; // hash for forwarding nodes
     static final int TREEBIN   = -2; // hash for roots of trees
     static final int RESERVED  = -3; // hash for transient reservations
-    static final int HASH_BITS = 0x7fffffff; // usable bits of normal node hash
+    static final int HASH_BITS = 0x7fffffff; // usable bits of normal node hash  值是int的最大值 用在计算hash时进行安位与计算消除负hash
 
     /** Number of CPUS, to place bounds on some sizings */
     static final int NCPU = Runtime.getRuntime().availableProcessors();
@@ -786,11 +786,16 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
 
     /**
      * Table initialization and resizing control.  When negative, the
-     * table is being initialized or resized: -1 for initialization,
-     * else -(1 + the number of active resizing threads).  Otherwise,
-     * when table is null, holds the initial table size to use upon
+     * table is being initialized or resized: -1 for initialization,  // -N:
+     * else -(1 + the number of active resizing threads).  Otherwise, // 0 :
+     * when table is null, holds the initial table size to use upon   //正数:
      * creation, or 0 for default. After initialization, holds the
      * next element count value upon which to resize the table.
+     * 控制标识符
+     * -N  表示有N-1个线程正在扩容
+     * -1  正在初始化
+     * 0   还没有初始化
+     * 正数 初始化或者下一次扩容的大小
      */
     private transient volatile int sizeCtl;
 
@@ -1009,13 +1014,17 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     /** Implementation for put and putIfAbsent */
     final V putVal(K key, V value, boolean onlyIfAbsent) {
         if (key == null || value == null) throw new NullPointerException();
-        int hash = spread(key.hashCode());
-        int binCount = 0;
-        for (Node<K,V>[] tab = table;;) {
+        int hash = spread(key.hashCode()); // 计算hash值
+        int binCount = 0; //用来记录链表的长度
+        for (Node<K,V>[] tab = table;;) {  //这里其实就是自旋操作，当出现线程竞争时不断自旋
             Node<K,V> f; int n, i, fh;
-            if (tab == null || (n = tab.length) == 0)
-                tab = initTable();
+            if (tab == null || (n = tab.length) == 0) //如果数组为空，则进行数组初始化
+                tab = initTable(); //初始化数组
+            // 得到数组的第一个节点，判断是否为null（通过hash值）
+            // tabAt 相当于tab[i]，用了getObjectVolatile，保证可见性，详情查询tabAt方法
+            // 以 volatile 读的方式来读取 table 数组中的元素，保证每次拿到的数据都是最新的
             else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {
+                // 如果该下标返回的节点为空，则直接通过 cas 将新的值封装成 node 插入即可；如果 cas 失败，说明存在竞争，则进入下一次循环
                 if (casTabAt(tab, i, null,
                              new Node<K,V>(hash, key, value, null)))
                     break;                   // no lock when adding to empty bin
@@ -2221,21 +2230,21 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      * Initializes table, using the size recorded in sizeCtl.
      */
     private final Node<K,V>[] initTable() {
-        Node<K,V>[] tab; int sc;
+        Node<K,V>[] tab; int sc; // sc是int类型初始化为0
         while ((tab = table) == null || tab.length == 0) {
-            if ((sc = sizeCtl) < 0)
-                Thread.yield(); // lost initialization race; just spin
-            else if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) {
+            if ((sc = sizeCtl) < 0) //被其他线程抢占了初始化的操作,则直接让出自己的 CPU 时间片
+                Thread.yield(); // lost initialization race; just spin 失去初始化竞争，只能自旋
+            else if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) { // 通过 cas 操作，将 sizeCtl 替换为-1，标识当前线程抢占到了初始化资格
                 try {
                     if ((tab = table) == null || tab.length == 0) {
                         int n = (sc > 0) ? sc : DEFAULT_CAPACITY;
                         @SuppressWarnings("unchecked")
                         Node<K,V>[] nt = (Node<K,V>[])new Node<?,?>[n];
                         table = tab = nt;
-                        sc = n - (n >>> 2);
+                        sc = n - (n >>> 2); // 计算下次扩容的大小，实际就是当前容量的 0.75倍，这里使用了右移来计算
                     }
                 } finally {
-                    sizeCtl = sc;
+                    sizeCtl = sc; //设置 sizeCtl 为 sc, 如果默认是 16 的话，那么这个时候 sc=16*0.75=12，在try里面计算了
                 }
                 break;
             }
