@@ -2540,12 +2540,15 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     }
 
     // See LongAdder version for explanation
+    // fullAddCount 主要是用来初始化 CounterCell，来记录元素个数，里面包含扩容，初始化等
     private final void fullAddCount(long x, boolean wasUncontended) {
         int h;
+        // 获取当前线程的 probe 的值，如果值为 0，则初始化当前线程的 probe 的值,
+        // probe：随机数
         if ((h = ThreadLocalRandom.getProbe()) == 0) {
             ThreadLocalRandom.localInit();      // force initialization
             h = ThreadLocalRandom.getProbe();
-            wasUncontended = true;
+            wasUncontended = true;  // 由于重新生成了 probe，未冲突标志位设置为 true
         }
         boolean collide = false;                // True if last slot nonempty
         for (;;) {
