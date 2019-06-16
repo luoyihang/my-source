@@ -807,12 +807,12 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     /**
      * Spinlock (locked via CAS) used when resizing and/or creating CounterCells.
      */
-    private transient volatile int cellsBusy;
+    private transient volatile int cellsBusy; // 标识当前 cell 数组是否在初始化或扩容中的CAS 标志
 
     /**
      * Table of counter cells. When non-null, size is a power of 2.
      */
-    private transient volatile CounterCell[] counterCells;
+    private transient volatile CounterCell[] counterCells; // counterCells 数组，总数值的分值分别存在每个 cell 中
 
     // views
     private transient KeySetView<K,V> keySet;
@@ -1021,7 +1021,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             if (tab == null || (n = tab.length) == 0) //如果数组为空，则进行数组初始化
                 tab = initTable(); //初始化数组
             // 得到数组的第一个节点，判断是否为null（通过hash值）
-            // tabAt 相当于tab[i]，用了getObjectVolatile，保证可见性，详情查询tabAt方法
+            // tabAt 相当于tab[i](该下标的第一个元素)，用了getObjectVolatile，保证可见性，详情查询tabAt方法
             // 以 volatile 读的方式来读取 table 数组中的元素，保证每次拿到的数据都是最新的
             else if ((f = tabAt(tab, i = (n - 1) & hash)) == null) {
                 // 如果该下标返回的节点为空，则直接通过 cas 将新的值封装成 node 插入即可；如果 cas 失败，说明存在竞争，则进入下一次循环
@@ -1029,6 +1029,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                              new Node<K,V>(hash, key, value, null)))
                     break;                   // no lock when adding to empty bin
             }
+            // 如果是正在扩容的情况，帮助扩容
             else if ((fh = f.hash) == MOVED)
                 tab = helpTransfer(tab, f);
             else {
@@ -2263,11 +2264,20 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      * @param check if <0, don't check resize, if <= 1 only check if uncontended
      */
     private final void addCount(long x, int check) {
-        CounterCell[] as; long b, s;
+        CounterCell[] as; long b, s;  // CounterCell：计数表，用来记录元素个数，采用了分片的方法来记录大小
+        // 判断 counterCells 是否为空，
+        // 1.  如果为空，就通过 cas 操作尝试修改 baseCount 变量，对这个变量进行原子累加操
+        // 作(做这个操作的意义是：如果在没有竞争的情况下，仍然采用 baseCount 来记录元素个数)
+        //2.  如果 cas 失败说明存在竞争，这个时候不能再采用 baseCount 来累加，而是通过CounterCell 来记录
         if ((as = counterCells) != null ||
             !U.compareAndSwapLong(this, BASECOUNT, b = baseCount, s = b + x)) {
             CounterCell a; long v; int m;
-            boolean uncontended = true;
+            boolean uncontended = true; // 是否冲突（竞争）标识，默认为没有冲突（竞争）
+            // 这里有几个判断
+            // 1. 计数表为空则直接调用 fullAddCount
+            // 2. 从计数表中随机取出一个数组的位置为空，直接调用 fullAddCount
+            // 3. 通过 CAS 修改 CounterCell 随机位置的值，如果修改失败说明出现并发情况（这里又用到了一种巧妙的方法），调用 fullAndCount
+            // Random 在线程并发的时候会有性能问题以及可能会产生相同的随机数 ,ThreadLocalRandom.getProbe 可以解决这个问题，并且性能要比 Random 高
             if (as == null || (m = as.length - 1) < 0 ||
                 (a = as[ThreadLocalRandom.getProbe() & m]) == null ||
                 !(uncontended =
@@ -2275,9 +2285,9 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 fullAddCount(x, uncontended);
                 return;
             }
-            if (check <= 1)
+            if (check <= 1) // 链表长度小于等于 1，不需要考虑扩容
                 return;
-            s = sumCount();
+            s = sumCount(); // 统计 ConcurrentHashMap 元素个数
         }
         if (check >= 0) {
             Node<K,V>[] tab, nt; int n, sc;
