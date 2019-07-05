@@ -1041,22 +1041,27 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             // 意味着有其他线程正在进行扩容，那么当前现在直接帮助它进行扩容，因此调用 helpTransfer 方法
             else if ((fh = f.hash) == MOVED)
                 tab = helpTransfer(tab, f);
-            else {
+            // 这个方法的主要作用是，如果被添加的节点的位置已经存在节点的时候，需要以链表的方式加入到节点中
+            // 如果当前节点已经是一颗红黑树，那么就会按照红黑树的规则将当前节点加入到红黑树中
+            else { // 进入到这个分支，说明 f 是当前 nodes 数组对应位置节点的头节点，并且不为空
                 V oldVal = null;
+                // 给对应的头结点加锁
                 synchronized (f) {
-                    if (tabAt(tab, i) == f) {
-                        if (fh >= 0) {
+                    if (tabAt(tab, i) == f) { // 再次判断对应下标位置是否为 f 节点
+                        if (fh >= 0) { // 头结点的 hash 值大于 0，说明是链表，否则可能是红黑树
                             binCount = 1;
                             for (Node<K,V> e = f;; ++binCount) {
                                 K ek;
+                                // 如果发现相同的 key，则判断是否需要进行值的覆盖
                                 if (e.hash == hash &&
                                     ((ek = e.key) == key ||
                                      (ek != null && key.equals(ek)))) {
                                     oldVal = e.val;
-                                    if (!onlyIfAbsent)
+                                    if (!onlyIfAbsent) // 默认情况下，直接覆盖旧的值
                                         e.val = value;
                                     break;
                                 }
+                                // 一直遍历到链表的最末端，直接把新的值加入到链表的最后面
                                 Node<K,V> pred = e;
                                 if ((e = e.next) == null) {
                                     pred.next = new Node<K,V>(hash, key,
@@ -1065,22 +1070,26 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                 }
                             }
                         }
+                        // 如果当前的 f 节点是一颗红黑树
                         else if (f instanceof TreeBin) {
                             Node<K,V> p;
                             binCount = 2;
+                            // 则调用红黑树的插入方法插入新的值
                             if ((p = ((TreeBin<K,V>)f).putTreeVal(hash, key,
                                                            value)) != null) {
-                                oldVal = p.val;
+                                oldVal = p.val; // 同样，如果值已经存在，则直接替换
                                 if (!onlyIfAbsent)
                                     p.val = value;
                             }
                         }
                     }
                 }
-                if (binCount != 0) {
+                if (binCount != 0) { // 说明上面在做链表操作
+                    // 如果链表长度已经达到临界值 8 就需要把链表转换为树结构
                     if (binCount >= TREEIFY_THRESHOLD)
+                        // 转换为树结构
                         treeifyBin(tab, i);
-                    if (oldVal != null)
+                    if (oldVal != null) // 如果 val 是被替换的，则返回替换之前的值
                         return oldVal;
                     break;
                 }
@@ -2404,11 +2413,13 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      * @param size number of elements (doesn't need to be perfectly accurate)
      */
     private final void tryPresize(int size) {
+        //对 size 进行修复,主要目的是防止传入的值不是一个 2 次幂的整数，然后通过 tableSizeFor 来讲入参转化为离该整数最近的 2 次幂
         int c = (size >= (MAXIMUM_CAPACITY >>> 1)) ? MAXIMUM_CAPACITY :
             tableSizeFor(size + (size >>> 1) + 1);
         int sc;
         while ((sc = sizeCtl) >= 0) {
             Node<K,V>[] tab = table; int n;
+            // 下面这段代码和 initTable 是一样的，如果 table 没有初始化，则开始初始化
             if (tab == null || (n = tab.length) == 0) {
                 n = (sc > c) ? sc : c;
                 if (U.compareAndSwapInt(this, SIZECTL, sc, -1)) {
@@ -2426,6 +2437,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             }
             else if (c <= sc || n >= MAXIMUM_CAPACITY)
                 break;
+            //这段代码和 addCount 后部分代码是一样的，做辅助扩容操作 if (sc < 0) 里面代码一样
             else if (tab == table) {
                 int rs = resizeStamp(n);
                 if (sc < 0) {
@@ -2758,10 +2770,12 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
     private final void treeifyBin(Node<K,V>[] tab, int index) {
         Node<K,V> b; int n, sc;
         if (tab != null) {
+            // tab 的长度是不是小于 64，如果是，则执行扩容
             if ((n = tab.length) < MIN_TREEIFY_CAPACITY)
                 tryPresize(n << 1);
+            // 否则，将当前链表转化为红黑树结构存储
             else if ((b = tabAt(tab, index)) != null && b.hash >= 0) {
-                synchronized (b) {
+                synchronized (b) { // 将链表转换成红黑树
                     if (tabAt(tab, index) == b) {
                         TreeNode<K,V> hd = null, tl = null;
                         for (Node<K,V> e = b; e != null; e = e.next) {
