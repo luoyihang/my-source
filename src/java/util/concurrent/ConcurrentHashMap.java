@@ -1025,9 +1025,13 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         int hash = spread(key.hashCode()); // 计算hash值
         int binCount = 0; // 用来记录链表的长度
         for (Node<K,V>[] tab = table;;) {  // 这里其实就是自旋操作，当出现线程竞争时不断自旋
+            // f:头结点 f = tabAt(tab, i = (n - 1) & hash)
+            // n：n = tab.length
+            // i: i = (n - 1)
+            // fh:头结点f的 hash 值 f.hash
             Node<K,V> f; int n, i, fh;
             if (tab == null || (n = tab.length) == 0) // 如果数组为空，则进行数组初始化
-                tab = initTable(); //初始化数组
+                    tab = initTable(); //初始化数组
             // 得到数组的第一个节点，判断是否为null（通过hash值）
             // tabAt 相当于tab[i](该下标的第一个元素)，用了getObjectVolatile，保证可见性，详情查询tabAt方法
             // tabAt方法中以 volatile 读的方式来读取 table 数组中的元素，保证每次拿到的数据都是最新的
@@ -2323,6 +2327,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 (a = as[ThreadLocalRandom.getProbe() & m]) == null ||
                 !(uncontended =
                   U.compareAndSwapLong(a, CELLVALUE, v = a.value, v + x))) {
+                // fullAddCount 主要是用来初始化 CounterCell，来记录元素个数，里面包含扩容，初始化等
                 fullAddCount(x, uncontended);
                 return;
             }
@@ -2345,11 +2350,11 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 int rs = resizeStamp(n); // 这里是生成一个唯一的扩容戳
                 // sc<0，也就是 sizeCtl<0，说明已经有别的线程正在扩容了，再进行判断是否帮助扩容
                 if (sc < 0) {
-                    //这 5 个条件只要有一个条件为 true，说明当前线程不能帮助进行此次的扩容，直接跳出循环
+                    // 这 5 个条件只要有一个条件为 true，说明当前线程不能帮助进行此次的扩容，直接跳出循环
                     // sc >>> RESIZE_STAMP_SHIFT != rs 表示比较高位的 RESIZE_STAMP_BITS 生成戳和 rs 是否相等，相同    ？？？语言有问题
                     // sc = rs + 1 表示扩容结束
                     // sc == rs + MAX_RESIZERS 表示帮助线程线程已经达到最大值了
-                    // nt = nextTable 表示扩容已经结束
+                    // (nt = nextTable) == null 表示扩容已经结束
                     // transferIndex <= 0 表示所有的 transfer 任务都被领取完了，没有剩余的hash 桶来给自己自己好这个线程来做 transfer    ？？？语言有问题
                     if ((sc >>> RESIZE_STAMP_SHIFT) != rs || sc == rs + 1 ||
                         sc == rs + MAX_RESIZERS || (nt = nextTable) == null ||
@@ -2578,7 +2583,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                         if (fh >= 0) {
                             int runBit = fh & n;
                             Node<K,V> lastRun = f;
-                            // 遍历当前 bucket 的链表，目的是尽量重用 Node 链表尾部的一部分
+                            // 遍历当前 bucket 的链表，目的是尽量重用， Node 链表尾部的一部分
                             for (Node<K,V> p = f.next; p != null; p = p.next) {
                                 int b = p.hash & n;
                                 if (b != runBit) {
@@ -2609,6 +2614,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                             setTabAt(tab, i, fwd);  // 把旧 table 的 hash 桶中放置转发节点，表明此 hash 桶已经被处理
                             advance = true;
                         }
+                        // 红黑树的和
                         else if (f instanceof TreeBin) {
                             TreeBin<K,V> t = (TreeBin<K,V>)f;
                             TreeNode<K,V> lo = null, loTail = null;
