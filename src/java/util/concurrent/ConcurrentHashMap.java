@@ -2502,13 +2502,13 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         // 会有一个判断 MOVED 的逻辑。它的作用是用来占位，表示原数组中位置 i 处的节点完成迁移以后，
         // 就会在 i 位置设置一个 fwd 来告诉其他线程这个位置已经处理过了，具体后续还会在讲
         ForwardingNode<K,V> fwd = new ForwardingNode<K,V>(nextTab);
-        // 首次推进为 true，如果等于 true，说明需要再次推进一个下标（i--），反之，如果是false，
-        // 那么就不能推进下标，需要将当前的下标处理完毕才能继续推进
+        // 表示当前步长内是否已经处理完，为 true 则进行下一次推进，也就是 --i ， 在 while(advance) {} 里面处理
         boolean advance = true;
         // 判断是否已经扩容完成，完成就 return，退出循环
         boolean finishing = false; // to ensure sweep before committing nextTab
-        // 通过 for 自循环处理每个槽位中的链表元素，默认 advace 为真，通过 CAS 设置transferIndex 属性值，
+        // 通过 for 自循环处理每个槽位中的链表元素，默认 advance 为真，通过 CAS 设置transferIndex 属性值，
         // 并初始化 i 和 bound 值， i 指当前处理的槽位序号， bound 指需要处理的槽位边界，先处理槽位 15 的节点；
+        // 比如16扩容成32，第一次循环 i 是 15，bound 是 0; 比如32扩容成64，第一次循环 i 是 31，bound 是 16
         for (int i = 0, bound = 0;;) {
             // 这个循环使用 CAS 不断尝试为当前线程分配任务
             // 直到分配成功或任务队列已经被全部分配完毕
@@ -2517,22 +2517,28 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             Node<K,V> f; int fh;
             while (advance) {
                 int nextIndex, nextBound;
-                // --i 表示下一个待处理的 bucket，如果它>=bound,表示当前线程已经分配过 bucket 区域
+                // --i 表示下一个待处理的 bucket，如果i >= bound,表示当前线程已经分配过 bucket 区域
+                // 同一个 bucket 内的循环一直进入这里，进行--i 操作
                 if (--i >= bound || finishing)
+                    // 表示当前 bucket 内已经处理完
                     advance = false;
                 // 表示所有 bucket 已经被分配完毕
                 // transferIndex 迁移的下标
+                // 当全部 bucket 都处理完了，进入这里
                 else if ((nextIndex = transferIndex) <= 0) {
                     i = -1;
+                    // 表示当前 bucket 内已经处理完
                     advance = false;
                 }
                 //通过 cas 来修改 TRANSFERINDEX ,为当前线程分配任务，处理的节点区间为 (nextBound, nextIndex) -> (0, 15)
+                // 当需要取下一个 bucket 数据时，进入这里
                 else if (U.compareAndSwapInt
                          (this, TRANSFERINDEX, nextIndex,
                           nextBound = (nextIndex > stride ?
                                        nextIndex - stride : 0))) {
                     bound = nextBound; // 0
                     i = nextIndex - 1; // 15
+                    // 表示当前 bucket 内已经处理完
                     advance = false;
                 }
             }
@@ -2561,15 +2567,17 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                         return;
                     // 扩容结束了，更新 finising 变量
                     finishing = advance = true;
-                    // 再次循环检查一下整张表
+                    // 再次循环检查一下整张表，n 为 扩容前大小， 比如16扩容成32，n 为 16
                     i = n; // recheck before commit
                 }
             }
             // 如果位置 i 处是空的，没有任何节点，那么放入刚刚初始化的 ForwardingNode ”空节点“
             else if ((f = tabAt(tab, i)) == null)
+                // 将当前i位置设置成fwd节点，同时将 advance 设置为 true，进行下一次迁移
                 advance = casTabAt(tab, i, null, fwd);
             // 表示该位置是一个 ForwardingNode 节点，已经完成了迁移，也就是如果线程 A 已经处理过这个节点，那么线程 B 处理这个节点时，hash 值一定为 MOVE
             else if ((fh = f.hash) == MOVED)
+                // 将 advance 设置为 true，进行下一次迁移
                 advance = true; // already processed
             else {
                 // 对数组该节点位置加锁，开始处理数组该位置的迁移工作
@@ -2622,6 +2630,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                             setTabAt(nextTab, i, ln); // 将低位的链表放在 i 位置也就是不动
                             setTabAt(nextTab, i + n, hn); // 将高位链表放在 i+n 位置
                             setTabAt(tab, i, fwd);  // 把旧 table 的 hash 桶中放置 ForwardingNode 节点，表明此 hash 桶已经被处理
+                            // 将 advance 设置为 true，进行下一次迁移
                             advance = true;
                         }
                         // 红黑树的和
@@ -2663,6 +2672,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                             // 将原数组该位置处设置为 fwd，代表该位置已经处理完毕，
                             // 其他线程一旦看到该位置的 hash 值为 MOVED，就不会进行迁移了
                             setTabAt(tab, i, fwd);
+                            // 将 advance 设置为 true，进行下一次迁移
                             advance = true;
                         }
                     }
