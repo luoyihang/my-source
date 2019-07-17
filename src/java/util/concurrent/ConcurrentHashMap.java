@@ -2633,7 +2633,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                             // 将 advance 设置为 true，进行下一次迁移
                             advance = true;
                         }
-                        // 红黑树的和
+                        // 红黑树的
                         else if (f instanceof TreeBin) {
                             TreeBin<K,V> t = (TreeBin<K,V>)f;
                             TreeNode<K,V> lo = null, loTail = null;
