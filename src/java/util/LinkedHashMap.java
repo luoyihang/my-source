@@ -211,7 +211,7 @@ public class LinkedHashMap<K,V>
     /**
      * The iteration ordering method for this linked hash map: <tt>true</tt>
      * for access-order, <tt>false</tt> for insertion-order.
-     *
+     * accessOrder：true:按访问顺序排序（LRU），false:按插入顺序排序；
      * @serial
      */
     final boolean accessOrder;
@@ -283,11 +283,14 @@ public class LinkedHashMap<K,V>
     void afterNodeRemoval(Node<K,V> e) { // unlink
         LinkedHashMap.Entry<K,V> p =
             (LinkedHashMap.Entry<K,V>)e, b = p.before, a = p.after;
+        // 待删除节点 p 的前置后置节点都置空，相当于从双链表上取下来
         p.before = p.after = null;
+        // 如果p的前一个节点不存在，那么p的后一个节点做头节点
         if (b == null)
             head = a;
         else
             b.after = a;
+        // 同理，a为空，b就是尾节点
         if (a == null)
             tail = b;
         else
@@ -302,23 +305,35 @@ public class LinkedHashMap<K,V>
         }
     }
 
+    // 仅仅在accessOrder为true时进行，把当前访问的元素移动到链表尾部
     void afterNodeAccess(Node<K,V> e) { // move node to last
         LinkedHashMap.Entry<K,V> last;
+        // 当accessOrder的值为true，且e不是尾节点
         if (accessOrder && (last = tail) != e) {
+            // 将e赋值临时节点p， b是e的前一个节点， a是e的后一个节
             LinkedHashMap.Entry<K,V> p =
                 (LinkedHashMap.Entry<K,V>)e, b = p.before, a = p.after;
+            // 设置p的后一个节点为null，因为执行后p在链表末尾，after肯定为null
             p.after = null;
+            // p的前一个节点不存在，p就是头节点，那么把p放到最后，a就是头节点
             if (b == null)
                 head = a;
             else
+                // p的前一个节点存在，p放到最后，b的后一个节点指向a
                 b.after = a;
+
+            // p的后一个节点存在，p放到最后，a的前一个节点指向a
             if (a != null)
                 a.before = b;
             else
+                // p的后一个节点不存在
                 last = b;
+
+            // 只有一个p节点
             if (last == null)
                 head = p;
             else {
+                // last不为空，把p放到last节点后面
                 p.before = last;
                 last.after = p;
             }
