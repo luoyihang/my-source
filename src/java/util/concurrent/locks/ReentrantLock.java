@@ -135,6 +135,8 @@ public class ReentrantLock implements Lock, java.io.Serializable {
                     return true;
                 }
             }
+            // 可重入锁
+            // 如果是获取锁的线程再次请求，则将同步状态值进行增加并返回 true ，表示获取同步状态成功
             else if (current == getExclusiveOwnerThread()) {
                 int nextc = c + acquires;
                 if (nextc < 0) // overflow
@@ -145,11 +147,14 @@ public class ReentrantLock implements Lock, java.io.Serializable {
             return false;
         }
 
+
         protected final boolean tryRelease(int releases) {
+            // 如果该锁被获取了n次，那么前(n-1)次tryRelease方法必须返回false，只有当同步状态完全释放了，才能返回true
             int c = getState() - releases;
             if (Thread.currentThread() != getExclusiveOwnerThread())
                 throw new IllegalMonitorStateException();
             boolean free = false;
+            // 当 同步状态为0，将占有线程设置成null，并返回true，表示释放成功
             if (c == 0) {
                 free = true;
                 setExclusiveOwnerThread(null);
@@ -195,6 +200,9 @@ public class ReentrantLock implements Lock, java.io.Serializable {
     /**
      * Sync object for non-fair locks
      */
+    // 1. 非公平锁
+    // 2. 非公平锁往往比公平锁的效率高
+    // 3. 非公平锁可能会造成线程“饥饿”，但是极少的线程切换比公平锁效率高
     static final class NonfairSync extends Sync {
         private static final long serialVersionUID = 7316153563782823691L;
 
@@ -217,6 +225,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
     /**
      * Sync object for fair locks
      */
+    // 公平锁
     static final class FairSync extends Sync {
         private static final long serialVersionUID = -3000897897090466540L;
 
@@ -232,6 +241,9 @@ public class ReentrantLock implements Lock, java.io.Serializable {
             final Thread current = Thread.currentThread();
             int c = getState();
             if (c == 0) {
+                // 1. 相比 nonfairTryAcquire 方法， 判断条件多了一个 hasQueuedPredecessors
+                // 2. hasQueuedPredecessors：加入同步队列的当前节点是否有前驱节点的判断，如果有返回 true
+                // 表示有线程比当前线程更早得请求获取锁，因此需要等待前驱线程获取并释放锁之后才能继续获取锁
                 if (!hasQueuedPredecessors() &&
                     compareAndSetState(0, acquires)) {
                     setExclusiveOwnerThread(current);
