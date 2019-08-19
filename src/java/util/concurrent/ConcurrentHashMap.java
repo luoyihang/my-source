@@ -2309,7 +2309,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      */
     private final void addCount(long x, int check) {
         // CounterCell：计数表，用来记录元素个数，采用了分片的方法来记录大小
-        // s：集合大小 s = sumCOunt()方法计算得出
+        // s：集合大小 s = sumCount()方法计算得出
         // 为什么 ConcurrentHashMap 要用 CounterCell 数组来记录元素个数的
         // 问题还是处在并发上，ConcurrentHashMap 是并发集合，如果用一个成员变量来统计元素个数的话，
         // 为了保证并发情况下共享变量的的难全兴，势必会需要通过加锁或者自旋来实现，
@@ -2319,7 +2319,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         // 判断 counterCells 是否为空，
         // 1.如果为空，就通过 cas 操作尝试修改 baseCount 变量，
         // 对这个变量进行原子累加操作(做这个操作的意义是：如果在没有竞争的情况下，仍然采用 baseCount 来记录元素个数)
-        // 2.如果 cas 失败说明存在竞争，这个时候不能再采用 baseCount 来累加，而是通过CounterCell 来记录
+        // 2.如果 cas 失败说明存在竞争，这个时候不能再采用 baseCount 来累加，而是通过 CounterCell 来记录
         if ((as = counterCells) != null ||
             !U.compareAndSwapLong(this, BASECOUNT, b = baseCount, s = b + x)) {
             CounterCell a; long v; int m;

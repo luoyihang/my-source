@@ -297,6 +297,7 @@ public class LinkedHashMap<K,V>
             a.before = b;
     }
 
+    // evict如果为false，则表处于创建模式,当我们new HashMap(Map map)的时候就处于创建模式
     void afterNodeInsertion(boolean evict) { // possibly remove eldest
         LinkedHashMap.Entry<K,V> first;
         if (evict && (first = head) != null && removeEldestEntry(first)) {
@@ -305,7 +306,7 @@ public class LinkedHashMap<K,V>
         }
     }
 
-    // 仅仅在accessOrder为true时进行，把当前访问的元素移动到链表尾部
+    // 仅仅在 accessOrder 为true时进行，把当前访问的元素移动到链表尾部
     void afterNodeAccess(Node<K,V> e) { // move node to last
         LinkedHashMap.Entry<K,V> last;
         // 当accessOrder的值为true，且e不是尾节点

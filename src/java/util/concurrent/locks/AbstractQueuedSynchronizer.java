@@ -1846,6 +1846,7 @@ public abstract class AbstractQueuedSynchronizer
          * @return its new wait node
          */
         private Node addConditionWaiter() {
+            // 该方法增加节点不需要用CAS来保证，因为调用await()方法的线程必定是获取了锁的线程
             Node t = lastWaiter;
             // If lastWaiter is cancelled, clean out.
             if (t != null && t.waitStatus != Node.CONDITION) {
@@ -2032,7 +2033,9 @@ public abstract class AbstractQueuedSynchronizer
         public final void await() throws InterruptedException {
             if (Thread.interrupted())
                 throw new InterruptedException();
+            // 当前线程加入等待队列
             Node node = addConditionWaiter();
+            // 释放同步状态，也就是释放锁
             int savedState = fullyRelease(node);
             int interruptMode = 0;
             while (!isOnSyncQueue(node)) {
