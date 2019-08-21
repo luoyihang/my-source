@@ -130,6 +130,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
             final Thread current = Thread.currentThread();
             int c = getState();
             if (c == 0) {
+                // 相比于 fairTryAcquire 少了 hasQueuedPredecessors 方法，也就是不需要判断
                 if (compareAndSetState(0, acquires)) {
                     setExclusiveOwnerThread(current);
                     return true;
@@ -230,6 +231,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
         private static final long serialVersionUID = -3000897897090466540L;
 
         final void lock() {
+            // 调用了AQS的acquire函数
             acquire(1);
         }
 
@@ -244,6 +246,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
                 // 1. 相比 nonfairTryAcquire 方法， 判断条件多了一个 hasQueuedPredecessors
                 // 2. hasQueuedPredecessors：加入同步队列的当前节点是否有前驱节点的判断，如果有返回 true
                 // 表示有线程比当前线程更早得请求获取锁，因此需要等待前驱线程获取并释放锁之后才能继续获取锁
+                // 3. setExclusiveOwnerThread 将本线程设置为独占锁拥有线程
                 if (!hasQueuedPredecessors() &&
                     compareAndSetState(0, acquires)) {
                     setExclusiveOwnerThread(current);
@@ -251,6 +254,8 @@ public class ReentrantLock implements Lock, java.io.Serializable {
                 }
             }
             else if (current == getExclusiveOwnerThread()) {
+                // 如果该线程已经获取了独占性变量的所有权,那么根据重入性原理,将state值进行加1,表示多次lock
+                // 由于已经获得锁,该段代码只会被一个线程同时执行,所以不需要进行任何并行处理
                 int nextc = c + acquires;
                 if (nextc < 0)
                     throw new Error("Maximum lock count exceeded");

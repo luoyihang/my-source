@@ -529,6 +529,8 @@ public abstract class AbstractQueuedSynchronizer
 
     /**
      * The synchronization state.
+     * 0： 表示前还没有线程独占此变量
+     * >0：已经有线程获得了锁
      */
     private volatile int state;
 
@@ -1195,6 +1197,9 @@ public abstract class AbstractQueuedSynchronizer
      *        can represent anything you like.
      */
     public final void acquire(int arg) {
+        // 1. tryAcquire 先尝试获取"锁",获取了就不进入后续流程
+        // 2. addWaiter 是给当前线程创建一个节点,并将其加入等待队列   acquireQueued 是当线程已经加入等待队列之后继续尝试获取锁
+        // 3. selfInterrupt 无法加入队列，则中断
         if (!tryAcquire(arg) &&
             acquireQueued(addWaiter(Node.EXCLUSIVE), arg))
             selfInterrupt();

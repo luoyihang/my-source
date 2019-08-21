@@ -211,7 +211,7 @@ public class LinkedHashMap<K,V>
     /**
      * The iteration ordering method for this linked hash map: <tt>true</tt>
      * for access-order, <tt>false</tt> for insertion-order.
-     * accessOrder：true:按访问顺序排序（LRU），false:按插入顺序排序；
+     * accessOrder：true:按访问顺序排序（LRU），false:按插入顺序排序(FIFO)；
      * @serial
      */
     final boolean accessOrder;
@@ -300,6 +300,7 @@ public class LinkedHashMap<K,V>
     // evict如果为false，则表处于创建模式,当我们new HashMap(Map map)的时候就处于创建模式
     void afterNodeInsertion(boolean evict) { // possibly remove eldest
         LinkedHashMap.Entry<K,V> first;
+        // 如果需要实现超过n个元素就删除第一个元素的情况，需要重写 removeEldestEntry 方法
         if (evict && (first = head) != null && removeEldestEntry(first)) {
             K key = first.key;
             removeNode(hash(key), key, null, false, true);
