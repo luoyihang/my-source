@@ -2253,21 +2253,21 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      * Must be negative when shifted left by RESIZE_STAMP_SHIFT.
      */
     static final int resizeStamp(int n) {
+        // n = tab.length
         // Integer.numberOfLeadingZeros 这个方法是返回无符号整数 n 最高位非 0 位前面的 0 的个数
-        // 比如 10 的二进制是 0000 0000 0000 0000,0000 0000 0000 1010那么Integer.numberOfLeadingZeros返回的值就是 28
-        // 根据 resizeStamp 的运算逻辑，我们来推演一下，假如 n=16，那么 resizeStamp(16)=32796
-        // 转化为二进制是 [0000 0000 0000 0000 1000 0000 0001 1100]
+        // 比如 10 的二进制是 0000 0000 0000 0000,0000 0000 0000 1010那么Integer.numberOfLeadingZeros返回的值就是 27
+        // (1 << (RESIZE_STAMP_BITS - 1)) 相当于 1 左移15位，那么第16位为1（后续用来做符号位，当做负数计算）
+        // 根据 resizeStamp 的运算逻辑，我们来推演一下，假如 n=16，那么 Integer.numberOfLeadingZeros(n) | (1 << (RESIZE_STAMP_BITS - 1)) = 32796
+        // 转化为二进制是 [0000 0000 0000 0000 1000 0000 0001 1100]，为什么这么做，原因是和第一次扩容有关
         // 接着再来看,当第一个线程尝试进行扩容的时候，会执行下面这段代码
         // U.compareAndSwapInt(this, SIZECTL, sc, (rs << RESIZE_STAMP_SHIFT) + 2)
         // rs 左移 16 位，相当于原本的二进制低位变成了高位 [1000 0000 0001 1100 0000 0000 0000 0000]
         // 然后再 +2 = [1000 0000 0001 1100 0000 0000 0000 0010]
-        // 高 16 位代表扩容的标记、低 16 位代表并行扩容的线程数
+        // 高 16 位代表扩容的标记（可以看做UUID）、低 16 位代表并行扩容的线程数
         // 这样来存储有什么好处呢？
         // 1. 首先在 CHM 中是支持并发扩容的，也就是说如果当前的数组需要进行扩容操作，可以由多个线程来共同负责，这块后续会单独讲
         // 2. 可以保证每次扩容都生成唯一的生成戳，每次新的扩容，都有一个不同的 n，这个生成戳就是根据 n 来计算出来的一个数字，n 不同，这个数字也不同
-        // 第一个线程尝试扩容的时候，为什么是+2 ？
-        // 因为 1 表示初始化，2 表示一个线程在执行扩容，而且对 sizeCtl 的操作都是基于位运算的，
-        // 所以不会关心它本身的数值是多少，只关心它在二进制上的数值，而 sc + 1 会在低 16 位上加 1
+        // 第一个线程尝试扩容的时候，为什么是+2 ？因为 -1表示初始化，-2表示一个线程在执行扩容（后续有线程帮忙扩容，就只会+1了）
         return Integer.numberOfLeadingZeros(n) | (1 << (RESIZE_STAMP_BITS - 1));
     }
 
@@ -2317,8 +2317,8 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         // 所以在 ConcurrentHashMap 采用了分片的方法来记录大小，
         CounterCell[] as; long b, s;
         // 判断 counterCells 是否为空，
-        // 1.如果为空，就通过 cas 操作尝试修改 baseCount 变量，
-        // 对这个变量进行原子累加操作(做这个操作的意义是：如果在没有竞争的情况下，仍然采用 baseCount 来记录元素个数)
+        // 1.如果为空，说明没有多线程并发修改baseCount，直接通过 cas 操作尝试修改 baseCount 变量（只会尝试一次，失败，则采用CounterCell）
+        //      对这个变量进行原子累加操作(做这个操作的意义是：如果在没有竞争的情况下，仍然采用 baseCount 来记录元素个数)
         // 2.如果 cas 失败说明存在竞争，这个时候不能再采用 baseCount 来累加，而是通过 CounterCell 来记录
         if ((as = counterCells) != null ||
             !U.compareAndSwapLong(this, BASECOUNT, b = baseCount, s = b + x)) {
@@ -2348,7 +2348,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         if (check >= 0) { // 如果 binCount>=0，标识需要检查扩容
             Node<K,V>[] tab, nt; int n, sc;
             // s 标识集合大小 s = sumCount()
-            // 如果集合大小大于或等于扩容阈值（默认值的 0.75）
+            // s >= (long)(sc = sizeCtl)  - 如果集合大小 >= 扩容阈值（sizeCtl大于0时候，表示下次扩容的阈值，默认12）
             // 并且 table 不为空
             // 并且 table 的长度 小于 最大容量
             while (s >= (long)(sc = sizeCtl) && (tab = table) != null &&
@@ -2357,11 +2357,11 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 // sc<0，也就是 sizeCtl<0，说明已经有别的线程正在扩容了，再进行判断是否帮助扩容
                 if (sc < 0) {
                     // 这 5 个条件只要有一个条件为 true，说明当前线程不能帮助进行此次的扩容，直接跳出循环
-                    // sc >>> RESIZE_STAMP_SHIFT != rs 表示比较高位的 RESIZE_STAMP_BITS 生成戳和 rs 是否相等，相同    ？？？语言有问题
+                    // sc >>> RESIZE_STAMP_SHIFT != rs 表示比较高位的 RESIZE_STAMP_BITS 生成戳和 rs 是否相等才帮忙扩容，否则不帮忙扩容
                     // sc = rs + 1 表示扩容结束
                     // sc == rs + MAX_RESIZERS 表示帮助线程线程已经达到最大值了
                     // (nt = nextTable) == null 表示扩容已经结束
-                    // transferIndex <= 0 表示所有的 transfer 任务都被领取完了，没有剩余的hash 桶来给自己自己好这个线程来做 transfer    ？？？语言有问题
+                    // transferIndex <= 0 表示所有的 transfer 任务都被领取完了，没有剩余的hash 桶来给自己这个线程来做 transfer
                     if ((sc >>> RESIZE_STAMP_SHIFT) != rs || sc == rs + 1 ||
                         sc == rs + MAX_RESIZERS || (nt = nextTable) == null ||
                         transferIndex <= 0)
@@ -2722,14 +2722,17 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             CounterCell[] as; CounterCell a; int n; long v;
             if ((as = counterCells) != null && (n = as.length) > 0) {
                 if ((a = as[(n - 1) & h]) == null) {
-                    // cellBusy：标识当前 cell 数组是否在初始化或扩容中的 CAS 标志位
+                    //cellsBusy = 0 表示 counterCells 不在初始化或者扩容状态下
                     if (cellsBusy == 0) {            // Try to attach new Cell
+                        // 构造一个 CounterCell 的值，传入元素个数
                         CounterCell r = new CounterCell(x); // Optimistic create
                         if (cellsBusy == 0 &&
+                            // //通过 cas 设置 cellsBusy 标识，防止其他线程来对 counterCells 并发处理
                             U.compareAndSwapInt(this, CELLSBUSY, 0, 1)) {
                             boolean created = false;
                             try {               // Recheck under lock
                                 CounterCell[] rs; int m, j;
+                                // 将初始化的 r 对象的元素个数放在对应下标的位置
                                 if ((rs = counterCells) != null &&
                                     (m = rs.length) > 0 &&
                                     rs[j = (m - 1) & h] == null) {
@@ -2737,27 +2740,43 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                                     created = true;
                                 }
                             } finally {
+                                // 恢复标志位
                                 cellsBusy = 0;
                             }
+                            // 创建成功，退出循环
                             if (created)
                                 break;
+                            // 执行到continue说明当前下标数据不为空创建失败，执行下一次自旋
                             continue;           // Slot is now non-empty
                         }
                     }
                     collide = false;
                 }
+
+                // 说明在 addCount 方法中 cas 失败了，并且获取 probe 的值不为空，
+                // 则设置为未冲突标识，进入下一次自旋
                 else if (!wasUncontended)       // CAS already known to fail
                     wasUncontended = true;      // Continue after rehash
+
+                // 由于指定下标位置的 cell 值不为空，则直接通过 cas 进行原子累加，如果成功，则直接退出
                 else if (U.compareAndSwapLong(a, CELLVALUE, v = a.value, v + x))
                     break;
+
+                // 如果已经有其他线程建立了新的 counterCells 或者 CounterCells 大于 CPU 核心数（很巧妙，线程的并发数不会超过 cpu 核心数），
+                // 则设置当前线程的循环失败不进行扩容
                 else if (counterCells != as || n >= NCPU)
                     collide = false;            // At max size or stale
+
+                // 恢复 collide 状态，标识下次循环会进行扩容
                 else if (!collide)
                     collide = true;
+
+                //进入这个步骤，说明 CounterCell 数组容量不够，线程竞争较大，所以先设置一个标识表示为正在扩容
                 else if (cellsBusy == 0 &&
                          U.compareAndSwapInt(this, CELLSBUSY, 0, 1)) {
                     try {
                         if (counterCells == as) {// Expand table unless stale
+                            // 扩容一倍 2 变成 4 ，这个扩容比较简单
                             CounterCell[] rs = new CounterCell[n << 1];
                             for (int i = 0; i < n; ++i)
                                 rs[i] = as[i];
@@ -2769,14 +2788,17 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     collide = false;
                     continue;                   // Retry with expanded table
                 }
+                // 更新随机数的值
                 h = ThreadLocalRandom.advanceProbe(h);
             }
+            // 初始化  CounterCell[]
             else if (cellsBusy == 0 && counterCells == as &&
                      U.compareAndSwapInt(this, CELLSBUSY, 0, 1)) {
                 boolean init = false;
                 try {                           // Initialize table
                     if (counterCells == as) {
                         CounterCell[] rs = new CounterCell[2];
+                        // h & 1 和  hash & (length - 1)一样，只不过length刚好等于2
                         rs[h & 1] = new CounterCell(x);
                         counterCells = rs;
                         init = true;
@@ -2787,6 +2809,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 if (init)
                     break;
             }
+            // 竞争激烈，其它线程占据 cell 数组，直接累加在 base 变量中
             else if (U.compareAndSwapLong(this, BASECOUNT, v = baseCount, v + x))
                 break;                          // Fall back on using base
         }
