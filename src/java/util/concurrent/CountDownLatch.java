@@ -170,6 +170,7 @@ public class CountDownLatch {
         }
 
         protected int tryAcquireShared(int acquires) {
+            // AQS的state在CountDownLatch中是计数器的作用
             return (getState() == 0) ? 1 : -1;
         }
 

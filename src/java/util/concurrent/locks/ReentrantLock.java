@@ -148,7 +148,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
             return false;
         }
 
-
+        // 不需要加锁时因为，必须获取了锁，才能释放
         protected final boolean tryRelease(int releases) {
             // 如果该锁被获取了n次，那么前(n-1)次tryRelease方法必须返回false，只有当同步状态完全释放了，才能返回true
             int c = getState() - releases;
@@ -212,6 +212,7 @@ public class ReentrantLock implements Lock, java.io.Serializable {
          * acquire on failure.
          */
         final void lock() {
+            // 非公平锁抢占
             if (compareAndSetState(0, 1))
                 setExclusiveOwnerThread(Thread.currentThread());
             else

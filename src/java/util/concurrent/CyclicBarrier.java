@@ -223,6 +223,7 @@ public class CyclicBarrier {
                     return 0;
                 } finally {
                     if (!ranAction)
+                        // 唤醒全部处于conditionWaiter队列的node，加入到AQS队列
                         breakBarrier();
                 }
             }

@@ -2309,12 +2309,12 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      */
     private final void addCount(long x, int check) {
         // CounterCell：计数表，用来记录元素个数，采用了分片的方法来记录大小
-        // s：集合大小 s = sumCount()方法计算得出
+        // s：集合大小，通过s = sumCount()方法计算得出
         // 为什么 ConcurrentHashMap 要用 CounterCell 数组来记录元素个数的
         // 问题还是处在并发上，ConcurrentHashMap 是并发集合，如果用一个成员变量来统计元素个数的话，
-        // 为了保证并发情况下共享变量的的难全兴，势必会需要通过加锁或者自旋来实现，
-        // 如果竞争比较激烈的情况下，size 的设置上会出现比较大的冲突反而影响了性能，
-        // 所以在 ConcurrentHashMap 采用了分片的方法来记录大小，
+        // 为了保证并发情况下共享变量的的安全性，势必需要通过加锁或者自旋来实现，
+        // 但如果竞争比较激烈的情况下，size 的设置上会出现比较大的冲突反而影响了性能，
+        // 所以在 ConcurrentHashMap 采用了分片的方法来记录大小。
         CounterCell[] as; long b, s;
         // 判断 counterCells 是否为空，
         // 1.如果为空，就通过 cas 操作尝试修改 baseCount 变量，
@@ -2327,10 +2327,9 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             // 这里有几个判断
             // 1. 计数表为空则直接调用 fullAddCount
             // 2. 从计数表中随机取出一个数组的位置为空，直接调用 fullAddCount
-            // 3. 通过 CAS 修改 CounterCell 随机位置的值，如果修改失败说明出现并发情况（这里又用到了一种巧妙的方法），调用 fullAndCount
-            // Random 在线程并发的时候会有性能问题以及可能会产生相同的随机数 ,ThreadLocalRandom.getProbe 可以解决这个问题，并且性能要比 Random 高
+            // 3. 通过 CAS 修改 第2步中随机值位置的 CounterCell 的值，如果修改失败说明出现并发情况（这里又用到了一种巧妙的方法），调用 fullAndCount
             if (as == null || (m = as.length - 1) < 0 ||
-                (a = as[ThreadLocalRandom.getProbe() & m]) == null ||
+                (a = as[ThreadLocalRandom.getProbe() & m]) == null || // Random 在线程并发的时候会有性能问题以及可能会产生相同的随机数 ,ThreadLocalRandom.getProbe 可以解决这个问题，并且性能要比 Random 高
                 !(uncontended =
                   U.compareAndSwapLong(a, CELLVALUE, v = a.value, v + x))) {
                 // fullAddCount 主要是用来初始化 CounterCell，来记录元素个数，里面包含扩容，初始化等
