@@ -608,6 +608,7 @@ public abstract class AbstractQueuedSynchronizer
         Node node = new Node(Thread.currentThread(), mode);
         // Try the fast path of enq; backup to full enq on failure
         Node pred = tail;
+        // 尾部节点不为空，加入AQS队列
         if (pred != null) {
             node.prev = pred;
             if (compareAndSetTail(pred, node)) {
@@ -615,6 +616,7 @@ public abstract class AbstractQueuedSynchronizer
                 return node;
             }
         }
+        // 新建队列，并将当前node将入队列
         enq(node);
         return node;
     }
