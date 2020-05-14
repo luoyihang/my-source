@@ -749,7 +749,6 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
      * full volatile semantics, but are currently coded as volatile
      * writes to be conservative.
      */
-
     @SuppressWarnings("unchecked")
     // 该方法获取对象中offset偏移地址对应的对象field的值。实际上这段代码的含义等价于tab[i],
     // 但是为什么不直接使用 tab[i]来计算呢？
@@ -958,7 +957,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             else if (eh < 0)
                 // 参考 ForwardingNode.find(int h, Object k) 和 TreeBin.find(int h, Object k)
                 return (p = e.find(h, key)) != null ? p.val : null;
-            // 否则遍历链表
+            // 否则是链表，开始遍历链表
             while ((e = e.next) != null) {
                 if (e.hash == h &&
                     ((ek = e.key) == key || (ek != null && key.equals(ek))))
@@ -2256,16 +2255,15 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
         // n = tab.length
         // Integer.numberOfLeadingZeros 这个方法是返回无符号整数 n 最高位非 0 位前面的 0 的个数
         // 比如 10 的二进制是 0000 0000 0000 0000,0000 0000 0000 1010那么Integer.numberOfLeadingZeros返回的值就是 27
-        // (1 << (RESIZE_STAMP_BITS - 1)) 相当于 1 左移15位，那么第16位为1（后续用来做符号位，当做负数计算）
+        // `(1 << (RESIZE_STAMP_BITS - 1))` 相当于 1 左移15位，那么第16位为1（后续用来做符号位，当做负数计算）
         // 根据 resizeStamp 的运算逻辑，我们来推演一下，假如 n=16，那么 Integer.numberOfLeadingZeros(n) | (1 << (RESIZE_STAMP_BITS - 1)) = 32796
         // 转化为二进制是 [0000 0000 0000 0000 1000 0000 0001 1100]，为什么这么做，原因是和第一次扩容有关
-        // 接着再来看,当第一个线程尝试进行扩容的时候，会执行下面这段代码
-        // U.compareAndSwapInt(this, SIZECTL, sc, (rs << RESIZE_STAMP_SHIFT) + 2)
+        // 接着再来看,当第一个线程尝试进行扩容的时候，会执行这段代码`U.compareAndSwapInt(this, SIZECTL, sc, (rs << RESIZE_STAMP_SHIFT) + 2)`
         // rs 左移 16 位，相当于原本的二进制低位变成了高位 [1000 0000 0001 1100 0000 0000 0000 0000]
         // 然后再 +2 = [1000 0000 0001 1100 0000 0000 0000 0010]
         // 高 16 位代表扩容的标记（可以看做UUID）、低 16 位代表并行扩容的线程数
         // 这样来存储有什么好处呢？
-        // 1. 首先在 CHM 中是支持并发扩容的，也就是说如果当前的数组需要进行扩容操作，可以由多个线程来共同负责，这块后续会单独讲
+        // 1. 首先在 CHM 中是支持并发扩容的，也就是说如果当前的数组需要进行扩容操作，可以由多个线程来共同负责
         // 2. 可以保证每次扩容都生成唯一的生成戳，每次新的扩容，都有一个不同的 n，这个生成戳就是根据 n 来计算出来的一个数字，n 不同，这个数字也不同
         // 第一个线程尝试扩容的时候，为什么是+2 ？因为 -1表示初始化，-2表示一个线程在执行扩容（后续有线程帮忙扩容，就只会+1了）
         return Integer.numberOfLeadingZeros(n) | (1 << (RESIZE_STAMP_BITS - 1));
@@ -2352,7 +2350,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             // 并且 table 的长度 小于 最大容量
             while (s >= (long)(sc = sizeCtl) && (tab = table) != null &&
                    (n = tab.length) < MAXIMUM_CAPACITY) {
-                int rs = resizeStamp(n); // 这里是生成一个唯一的扩容戳
+                int rs = resizeStamp(n); // 这里是生成一个唯一的扩容戳；高 16 位代表扩容的标记（可以看做UUID）、低 16 位代表并行扩容的线程数
                 // sc<0，也就是 sizeCtl<0，说明已经有别的线程正在扩容了，再进行判断是否帮助扩容
                 if (sc < 0) {
                     // 这 5 个条件只要有一个条件为 true，说明当前线程不能帮助进行此次的扩容，直接跳出循环
@@ -2522,7 +2520,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                     // 表示当前 bucket 内已经处理完
                     advance = false;
                 // 表示所有 bucket 已经被分配完毕
-                // transferIndex 迁移的下标
+                // transferIndex：迁移的下标
                 // 当全部 bucket 都处理完了，进入这里
                 else if ((nextIndex = transferIndex) <= 0) {
                     i = -1;
@@ -2574,7 +2572,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             else if ((f = tabAt(tab, i)) == null)
                 // 将当前i位置设置成fwd节点，同时将 advance 设置为 true，进行下一次迁移
                 advance = casTabAt(tab, i, null, fwd);
-            // 表示该位置是一个 ForwardingNode 节点，已经完成了迁移，也就是如果线程 A 已经处理过这个节点，那么线程 B 处理这个节点时，hash 值一定为 MOVE
+            // 表示该位置是一个 ForwardingNode 节点，已经完成了迁移或者正在迁移，也就是如果线程 A 已经处理过这个节点，那么线程 B 处理这个节点时，hash 值一定为 MOVE
             else if ((fh = f.hash) == MOVED)
                 // 将 advance 设置为 true，进行下一次迁移
                 advance = true; // already processed
@@ -2583,6 +2581,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                 synchronized (f) {
                     // 再做一次校验
                     if (tabAt(tab, i) == f) {
+
                         //设置高低位的原因是因为在putVal方法中，通过(n-1) & hash 来获得在 table 中的数组下标来获取节点数据 n = table.length
                         // n = 16: (16 - 1) & hash
                         // n = 32: (32 - 1) & hash
@@ -2594,7 +2593,6 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                         // 比如 60 & 15 = 12 、60 & 31 = 28； 12 - 28 = 16
                         // 所以对于高位，直接增加扩容的长度，当下次 hash 获取数组位置的时候，可以直接定位到对应的位置。
                         // 这个地方又是一个很巧妙的设计，直接通过高低位分类以后，就使得不需要在每次扩容的时候来重新计算 hash，极大提升了效率。
-
                         //ln 表示低位， hn 表示高位;接下来这段代码的作用是把链表拆分成两部分，0 在低位，1 在高位
                         Node<K,V> ln, hn;
                         if (fh >= 0) {
