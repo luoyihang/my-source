@@ -2572,7 +2572,7 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
             else if ((f = tabAt(tab, i)) == null)
                 // 将当前i位置设置成fwd节点，同时将 advance 设置为 true，进行下一次迁移
                 advance = casTabAt(tab, i, null, fwd);
-            // 表示该位置是一个 ForwardingNode 节点，已经完成了迁移或者正在迁移，也就是如果线程 A 已经处理过这个节点，那么线程 B 处理这个节点时，hash 值一定为 MOVE
+            // 表示该位置是一个 ForwardingNode 节点，已经完成了迁移，也就是如果线程 A 已经处理过这个节点，那么线程 B 处理这个节点时，hash 值一定为 MOVE
             else if ((fh = f.hash) == MOVED)
                 // 将 advance 设置为 true，进行下一次迁移
                 advance = true; // already processed
@@ -2620,13 +2620,15 @@ public class ConcurrentHashMap<K,V> extends AbstractMap<K,V>
                             for (Node<K,V> p = f; p != lastRun; p = p.next) {
                                 int ph = p.hash; K pk = p.key; V pv = p.val;
                                 if ((ph & n) == 0)
+                                    // 第四个参数为next指针
                                     ln = new Node<K,V>(ph, pk, pv, ln);
                                 else
+                                    // 第四个参数为next指针
                                     hn = new Node<K,V>(ph, pk, pv, hn);
                             }
                             setTabAt(nextTab, i, ln); // 将低位的链表放在 i 位置也就是不动
                             setTabAt(nextTab, i + n, hn); // 将高位链表放在 i+n 位置
-                            setTabAt(tab, i, fwd);  // 把旧 table 的 hash 桶中放置 ForwardingNode 节点，表明此 hash 桶已经被处理
+                            setTabAt(tab, i, fwd);  // 迁移完毕，把旧 table 的 hash 桶中放置 ForwardingNode 节点，表明此 hash 桶已经被处理
                             // 将 advance 设置为 true，进行下一次迁移
                             advance = true;
                         }
